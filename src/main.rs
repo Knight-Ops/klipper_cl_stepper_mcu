@@ -31,7 +31,10 @@ use static_cell::StaticCell;
 mod ws2812_driver;
 // use ws2812_driver::Ws2812;
 mod board;
+mod cl_monitor;
 mod klipper;
+
+use cl_monitor::closed_loop_monitor;
 
 #[cfg(feature = "task_tracing")]
 mod rtos_trace_log;
@@ -102,8 +105,8 @@ fn main() -> ! {
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
         // spawner.spawn(onboard_rgb_led(ws_driver)).ok();
-        log::debug!("AS5600 Task");
-        spawner.spawn(as5600_task(as5600_driver)).ok();
+        log::debug!("CL Task");
+        spawner.spawn(closed_loop_monitor(as5600_driver)).ok();
         log::debug!("USB Writer");
         spawner.spawn(usb_writer(usb_tx)).ok();
         log::debug!("USB Reader");
@@ -185,46 +188,46 @@ async fn usb_writer(mut usb_tx: UsbSerialJtagTx<'static>) {
     }
 }
 
-pub static TRIGGER_MAGNET_READ: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-static MAGNET_SENSOR: Signal<CriticalSectionRawMutex, u16> = Signal::new();
-pub static CALIBRATION_ANGLE: Signal<CriticalSectionRawMutex, u16> = Signal::new();
+// pub static TRIGGER_MAGNET_READ: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+// static MAGNET_SENSOR: Signal<CriticalSectionRawMutex, u16> = Signal::new();
+// pub static CALIBRATION_ANGLE: Signal<CriticalSectionRawMutex, u16> = Signal::new();
 
-#[embassy_executor::task]
-async fn as5600_task(mut driver: As5600<I2C<'static, I2C0>>) {
-    loop {
-        match driver.magnet_status().await {
-            Ok(state) => match state {
-                Status::MagnetDetected => {
-                    log::info!("Magnet detected");
-                    break;
-                }
-                _ => {
-                    log::error!("Magnet not detected, or detected with error - {state:?}")
-                }
-            },
-            Err(e) => {
-                log::error!("Error with magnet detection occured : {:?}", e);
-            }
-        }
-    }
-    const DEG_PER_TICK: f32 = 360. / 4096.;
-    const DEG_PER_STEP: f32 = 360. / 3200.;
-    let start_angle = driver.angle().await.unwrap();
+// #[embassy_executor::task]
+// async fn as5600_task(mut driver: As5600<I2C<'static, I2C0>>) {
+//     loop {
+//         match driver.magnet_status().await {
+//             Ok(state) => match state {
+//                 Status::MagnetDetected => {
+//                     log::info!("Magnet detected");
+//                     break;
+//                 }
+//                 _ => {
+//                     log::error!("Magnet not detected, or detected with error - {state:?}")
+//                 }
+//             },
+//             Err(e) => {
+//                 log::error!("Error with magnet detection occured : {:?}", e);
+//             }
+//         }
+//     }
+//     const DEG_PER_TICK: f32 = 360. / 4096.;
+//     const DEG_PER_STEP: f32 = 360. / 3200.;
+//     let start_angle = driver.angle().await.unwrap();
 
-    // This needs work for calcs
-    loop {
-        TRIGGER_MAGNET_READ.wait().await;
-        TRIGGER_MAGNET_READ.reset();
-        let angle = driver.angle().await.unwrap();
-        let pos = STEPPER_POSITION.lock(|unlocked| *unlocked.borrow()).abs() % 3200;
-        log::info!(
-            "Magnet sensor reading : {} | pos : {}",
-            (angle.abs_diff(start_angle)) as f32 * DEG_PER_TICK,
-            pos as f32 * DEG_PER_STEP,
-        );
-        MAGNET_SENSOR.signal(angle);
-    }
-}
+//     // This needs work for calcs
+//     loop {
+//         TRIGGER_MAGNET_READ.wait().await;
+//         TRIGGER_MAGNET_READ.reset();
+//         let angle = driver.angle().await.unwrap();
+//         let pos = STEPPER_POSITION.lock(|unlocked| *unlocked.borrow()).abs() % 3200;
+//         log::info!(
+//             "Magnet sensor reading : {} | pos : {}",
+//             (angle.abs_diff(start_angle)) as f32 * DEG_PER_TICK,
+//             pos as f32 * DEG_PER_STEP,
+//         );
+//         MAGNET_SENSOR.signal(angle);
+//     }
+// }
 
 #[embassy_executor::task]
 async fn onboard_rgb_led(

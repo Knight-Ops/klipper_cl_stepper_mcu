@@ -2,6 +2,7 @@ use embassy_futures::select::Either;
 
 use embassy_time::Instant;
 
+use crate::cl_monitor::CL_MONITOR_CHANNEL;
 use crate::klipper::trsync::{TRSyncMessage, TRSYNC_CHANNEL};
 
 use super::EndstopPin;
@@ -74,8 +75,11 @@ pub async fn endstop_runner(
             true => {
                 // The only message we can get is that we should die since the Trsync timed out
                 // We should probably match here to be better
-                log::debug!("Killing homer");
                 let _ = ENDSTOP_CHANNEL.receive().await;
+                CL_MONITOR_CHANNEL
+                    .immediate_publisher()
+                    .publish_immediate(crate::cl_monitor::CLMonitorMessage::Calibrate);
+
                 return;
             }
         }

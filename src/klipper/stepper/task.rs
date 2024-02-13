@@ -1,8 +1,7 @@
 use anchor::*;
-use embassy_sync::{self, blocking_mutex::raw::CriticalSectionRawMutex, channel::Receiver};
-
+use as5600_async::{status::Status, As5600};
+use embassy_sync::{self, blocking_mutex::raw::CriticalSectionRawMutex};
 use embassy_time::block_for;
-
 use embassy_time::{Duration, Instant, Timer};
 use esp32c6_hal::rmt::TxChannel;
 use esp32c6_hal::{
@@ -10,7 +9,7 @@ use esp32c6_hal::{
     rmt::PulseCode,
 };
 
-use crate::TRIGGER_MAGNET_READ;
+use crate::cl_monitor::{CLMonitorMessage, CL_MONITOR_CHANNEL};
 
 use super::{StepperMessage, STEPPER_POSITION, STEPPER_STOP};
 
@@ -24,10 +23,17 @@ pub async fn step_driver(
     mut dir: esp32c6_hal::gpio::GpioPin<esp32c6_hal::gpio::Output<esp32c6_hal::gpio::PushPull>, 6>,
     invert_step: bool,
     step_pulse_ticks: u32,
-    step_queue: Receiver<
+    // step_queue: embassy_sync::channel::Receiver<
+    //     'static,
+    //     CriticalSectionRawMutex,
+    //     StepperMessage,
+    //     { crate::MOVE_QUEUE as usize },
+    // >,
+    step_queue: embassy_sync::priority_channel::Receiver<
         'static,
         CriticalSectionRawMutex,
         StepperMessage,
+        embassy_sync::priority_channel::Max,
         { crate::MOVE_QUEUE as usize },
     >,
 ) {
@@ -134,7 +140,11 @@ pub async fn step_driver(
                     }
                 }
 
-                TRIGGER_MAGNET_READ.signal(());
+                if step_info.count() > 100 {
+                    CL_MONITOR_CHANNEL.immediate_publisher().publish_immediate(
+                        CLMonitorMessage::CheckPosition(step_info.interval(), step_info.dir()),
+                    );
+                }
 
                 // Step counter
                 if step_info.dir() {
@@ -147,6 +157,43 @@ pub async fn step_driver(
                     STEPPER_POSITION.lock(|unlocked| {
                         *unlocked.borrow_mut() = step_counter;
                     });
+                }
+            }
+
+            StepperMessage::StepCorrection { _inner: step_info } => {
+                log::info!(
+                    "Step Correction : {} | {} | {}",
+                    step_info.interval(),
+                    step_info.count(),
+                    step_info.dir()
+                );
+                // Set our dir pin for these steps
+                if step_info.dir() && !dir.is_set_high().unwrap() {
+                    dir.set_high().unwrap();
+                } else if !step_info.dir() && dir.is_set_high().unwrap() {
+                    dir.set_low().unwrap();
+                }
+
+                for _ in 0..step_info.count() {
+                    Timer::after_ticks(step_info.interval() as u64).await;
+
+                    // Step Pulse
+                    #[cfg(not(feature = "rmt_step"))]
+                    if invert_step {
+                        step.set_low().unwrap();
+                        // Timer::after(pulse_duration).await;
+                        block_for(pulse_duration);
+                        step.set_high().unwrap();
+                    } else {
+                        step.set_high().unwrap();
+                        // Timer::after(pulse_duration).await;
+                        block_for(pulse_duration);
+                        step.set_low().unwrap();
+                    };
+                    #[cfg(feature = "rmt_step")]
+                    {
+                        step = step.transmit(&[pulse]).wait().unwrap();
+                    }
                 }
             }
 

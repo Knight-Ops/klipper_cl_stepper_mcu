@@ -2,12 +2,14 @@ use super::StepInfo;
 
 pub enum StepperMessage {
     StepInfo { _inner: StepInfo },
+    StepCorrection { _inner: StepInfo },
     ResetStepClock,
 }
 
 impl StepperMessage {
     fn get_priority(&self) -> u32 {
         match self {
+            Self::StepCorrection { _inner } => 1,
             Self::ResetStepClock => 0,
             Self::StepInfo { _inner } => 0,
         }
