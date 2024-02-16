@@ -54,13 +54,6 @@ pub struct Stepper {
         crate::klipper::stepper::StepperMessage,
         { crate::MOVE_QUEUE as usize },
     >,
-    // step_channel: embassy_sync::priority_channel::Sender<
-    //     'static,
-    //     CriticalSectionRawMutex,
-    //     crate::klipper::stepper::StepperMessage,
-    //     embassy_sync::priority_channel::Max,
-    //     { crate::MOVE_QUEUE as usize },
-    // >,
     dir: bool,
     position: i32,
 }
@@ -73,13 +66,6 @@ impl Stepper {
             crate::klipper::stepper::StepperMessage,
             { crate::MOVE_QUEUE as usize },
         >,
-        // step_channel: embassy_sync::priority_channel::Sender<
-        //     'static,
-        //     CriticalSectionRawMutex,
-        //     crate::klipper::stepper::StepperMessage,
-        //     embassy_sync::priority_channel::Max,
-        //     { crate::MOVE_QUEUE as usize },
-        // >,
         dir: bool,
     ) -> Self {
         Self {
