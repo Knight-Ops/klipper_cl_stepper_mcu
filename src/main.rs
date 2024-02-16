@@ -94,7 +94,7 @@ fn main() -> ! {
         peripherals.I2C0,
         io.pins.gpio23,
         io.pins.gpio22,
-        esp32c6_hal::prelude::_fugit_RateExtU32::kHz(100),
+        esp32c6_hal::prelude::_fugit_RateExtU32::MHz(1),
         &clocks,
     );
 

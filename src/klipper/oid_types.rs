@@ -48,38 +48,38 @@ impl<'a> TMCUart<'a> {
 
 // TODO: Position really shouldn't be a global Signal, it should be something we can put in this struct
 pub struct Stepper {
-    // step_channel: Sender<
-    //     'static,
-    //     CriticalSectionRawMutex,
-    //     crate::klipper::stepper::StepperMessage,
-    //     { crate::MOVE_QUEUE as usize },
-    // >,
-    step_channel: embassy_sync::priority_channel::Sender<
+    step_channel: Sender<
         'static,
         CriticalSectionRawMutex,
         crate::klipper::stepper::StepperMessage,
-        embassy_sync::priority_channel::Max,
         { crate::MOVE_QUEUE as usize },
     >,
+    // step_channel: embassy_sync::priority_channel::Sender<
+    //     'static,
+    //     CriticalSectionRawMutex,
+    //     crate::klipper::stepper::StepperMessage,
+    //     embassy_sync::priority_channel::Max,
+    //     { crate::MOVE_QUEUE as usize },
+    // >,
     dir: bool,
     position: i32,
 }
 
 impl Stepper {
     pub fn new(
-        // step_channel: Sender<
-        //     'static,
-        //     CriticalSectionRawMutex,
-        //     crate::klipper::stepper::StepperMessage,
-        //     { crate::MOVE_QUEUE as usize },
-        // >,
-        step_channel: embassy_sync::priority_channel::Sender<
+        step_channel: Sender<
             'static,
             CriticalSectionRawMutex,
             crate::klipper::stepper::StepperMessage,
-            embassy_sync::priority_channel::Max,
             { crate::MOVE_QUEUE as usize },
         >,
+        // step_channel: embassy_sync::priority_channel::Sender<
+        //     'static,
+        //     CriticalSectionRawMutex,
+        //     crate::klipper::stepper::StepperMessage,
+        //     embassy_sync::priority_channel::Max,
+        //     { crate::MOVE_QUEUE as usize },
+        // >,
         dir: bool,
     ) -> Self {
         Self {

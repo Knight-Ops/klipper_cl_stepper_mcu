@@ -77,8 +77,8 @@ pub async fn endstop_runner(
                 // We should probably match here to be better
                 let _ = ENDSTOP_CHANNEL.receive().await;
                 CL_MONITOR_CHANNEL
-                    .immediate_publisher()
-                    .publish_immediate(crate::cl_monitor::CLMonitorMessage::Calibrate);
+                    .send(crate::cl_monitor::CLMonitorMessage::Calibrate)
+                    .await;
 
                 return;
             }

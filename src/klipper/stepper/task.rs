@@ -23,19 +23,19 @@ pub async fn step_driver(
     mut dir: esp32c6_hal::gpio::GpioPin<esp32c6_hal::gpio::Output<esp32c6_hal::gpio::PushPull>, 6>,
     invert_step: bool,
     step_pulse_ticks: u32,
-    // step_queue: embassy_sync::channel::Receiver<
-    //     'static,
-    //     CriticalSectionRawMutex,
-    //     StepperMessage,
-    //     { crate::MOVE_QUEUE as usize },
-    // >,
-    step_queue: embassy_sync::priority_channel::Receiver<
+    step_queue: embassy_sync::channel::Receiver<
         'static,
         CriticalSectionRawMutex,
         StepperMessage,
-        embassy_sync::priority_channel::Max,
         { crate::MOVE_QUEUE as usize },
     >,
+    // step_queue: embassy_sync::priority_channel::Receiver<
+    //     'static,
+    //     CriticalSectionRawMutex,
+    //     StepperMessage,
+    //     embassy_sync::priority_channel::Max,
+    //     { crate::MOVE_QUEUE as usize },
+    // >,
 ) {
     let mut step_counter = 0i32;
     let mut step_clock = Instant::from_ticks(0);
@@ -82,7 +82,7 @@ pub async fn step_driver(
 
                 let mut delay_between_pulses = Duration::from_ticks(step_info.interval() as u64);
 
-                for _ in 0..step_info.count() {
+                for c in 0..step_info.count() {
                     // Not sure if this should go in the hot loop, this should be a pretty cheap check, but we could probably check between step groups
                     // The downside being they can be pretty large
                     if STEPPER_STOP.signaled() {
@@ -126,6 +126,17 @@ pub async fn step_driver(
 
                         step_clock = Instant::now();
 
+                        // Try to send a message to the CLMonitor, if the queue is full we don't care
+                        CL_MONITOR_CHANNEL.try_send(CLMonitorMessage::CheckPosition(
+                            if step_info.dir() {
+                                step_counter.wrapping_add(c as i32)
+                            } else {
+                                step_counter.wrapping_sub(c as i32)
+                            },
+                            step_info.interval(),
+                            step_info.dir(),
+                        ));
+
                         if step_info.add() != 0 {
                             if step_info.add().is_positive() {
                                 delay_between_pulses = delay_between_pulses
@@ -138,12 +149,6 @@ pub async fn step_driver(
                             }
                         }
                     }
-                }
-
-                if step_info.count() > 100 {
-                    CL_MONITOR_CHANNEL.immediate_publisher().publish_immediate(
-                        CLMonitorMessage::CheckPosition(step_info.interval(), step_info.dir()),
-                    );
                 }
 
                 // Step counter
@@ -159,44 +164,6 @@ pub async fn step_driver(
                     });
                 }
             }
-
-            StepperMessage::StepCorrection { _inner: step_info } => {
-                log::info!(
-                    "Step Correction : {} | {} | {}",
-                    step_info.interval(),
-                    step_info.count(),
-                    step_info.dir()
-                );
-                // Set our dir pin for these steps
-                if step_info.dir() && !dir.is_set_high().unwrap() {
-                    dir.set_high().unwrap();
-                } else if !step_info.dir() && dir.is_set_high().unwrap() {
-                    dir.set_low().unwrap();
-                }
-
-                for _ in 0..step_info.count() {
-                    Timer::after_ticks(step_info.interval() as u64).await;
-
-                    // Step Pulse
-                    #[cfg(not(feature = "rmt_step"))]
-                    if invert_step {
-                        step.set_low().unwrap();
-                        // Timer::after(pulse_duration).await;
-                        block_for(pulse_duration);
-                        step.set_high().unwrap();
-                    } else {
-                        step.set_high().unwrap();
-                        // Timer::after(pulse_duration).await;
-                        block_for(pulse_duration);
-                        step.set_low().unwrap();
-                    };
-                    #[cfg(feature = "rmt_step")]
-                    {
-                        step = step.transmit(&[pulse]).wait().unwrap();
-                    }
-                }
-            }
-
             StepperMessage::ResetStepClock => {
                 step_clock = Instant::from_ticks(0);
             }

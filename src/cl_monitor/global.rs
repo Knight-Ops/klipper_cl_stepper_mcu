@@ -1,7 +1,4 @@
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, pubsub::PubSubChannel,
-    signal::Signal,
-};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 
 use super::CLMonitorMessage;
 
@@ -9,5 +6,5 @@ use super::CLMonitorMessage;
 // static MAGNET_SENSOR: Signal<CriticalSectionRawMutex, u16> = Signal::new();
 // pub static CALIBRATE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-pub static CL_MONITOR_CHANNEL: PubSubChannel<CriticalSectionRawMutex, CLMonitorMessage, 64, 4, 4> =
-    PubSubChannel::new();
+pub static CL_MONITOR_CHANNEL: Channel<CriticalSectionRawMutex, CLMonitorMessage, 64> =
+    Channel::new();
