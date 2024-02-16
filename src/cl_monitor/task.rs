@@ -88,20 +88,20 @@ pub async fn closed_loop_monitor(mut driver: As5600<I2C<'static, I2C0>>) {
                 if step_correction_count.abs() > 8 {
                     if step_correction_count.is_negative() {
                         // log::info!("Currently behind where we should be by {error} degrees\nNeed to move in {} direction", dir);
-                        STEP_CORRECTION.signal(StepInfo::new(
-                            interval,
-                            step_correction_count.abs() as u16,
-                            0,
-                            dir,
-                        ));
+                        // STEP_CORRECTION.signal(StepInfo::new(
+                        //     interval,
+                        //     step_correction_count.abs() as u16,
+                        //     0,
+                        //     !dir,
+                        // ));
                     } else if step_correction_count.is_positive() {
                         // log::info!("Currently ahead where we should be by {error} degrees\nNeed to move in {} direction", !dir);
-                        STEP_CORRECTION.signal(StepInfo::new(
-                            interval,
-                            step_correction_count as u16,
-                            0,
-                            !dir,
-                        ));
+                        // STEP_CORRECTION.signal(StepInfo::new(
+                        //     interval,
+                        //     step_correction_count as u16,
+                        //     0,
+                        //     dir,
+                        // ));
                     } else {
                         // log::info!("Currently at where we should be");
                     }
