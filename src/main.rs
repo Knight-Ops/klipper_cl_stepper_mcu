@@ -28,11 +28,10 @@ use smart_leds::RGB8;
 use smart_leds_trait::SmartLedsWrite;
 use static_cell::StaticCell;
 
-mod ws2812_driver;
-// use ws2812_driver::Ws2812;
 mod board;
 mod cl_monitor;
 mod klipper;
+mod ws_2812;
 
 use cl_monitor::closed_loop_monitor;
 
@@ -64,7 +63,7 @@ fn main() -> ! {
     // GPIO 4 as output
     // let led = io.pins.gpio4.into_push_pull_output();
     let rmt = esp32c6_hal::rmt::Rmt::new(peripherals.RMT, 80u32.MHz(), &clocks).unwrap();
-    // let ws_driver = ws2812_driver::SmartLedsAdapter::new(
+    // let ws_driver = ws_2812::SmartLedsAdapter::new(
     //     rmt.channel0,
     //     io.pins.gpio8.into_open_drain_output(),
     //     smartLedBuffer!(1),
@@ -94,7 +93,7 @@ fn main() -> ! {
         peripherals.I2C0,
         io.pins.gpio23,
         io.pins.gpio22,
-        esp32c6_hal::prelude::_fugit_RateExtU32::MHz(1),
+        esp32c6_hal::prelude::_fugit_RateExtU32::kHz(800),
         &clocks,
     );
 
@@ -105,7 +104,7 @@ fn main() -> ! {
     let executor = EXECUTOR.init(Executor::new());
     executor.run(|spawner| {
         // log::debug!("LED Task");
-        // spawner.spawn(onboard_rgb_led(ws_driver)).ok();
+        // spawner.spawn(ws_2812::onboard_rgb_led(ws_driver)).ok();
         log::debug!("CL Task");
         spawner.spawn(closed_loop_monitor(as5600_driver)).ok();
         log::debug!("USB Writer");
@@ -165,9 +164,6 @@ async fn usb_reader(mut usb_serial: UsbSerialJtagRx<'static>, mut mcu_state: Sta
             let mut klipper_wrap = SliceInputBuffer::new(&usb_buffer[0..read_bytes]);
             KLIPPER_TRANSPORT.receive(&mut klipper_wrap, &mut mcu_state);
         }
-
-        // We probably don't need to do this since we only ever write the read_bytes count
-        // usb_buffer.fill(0);
     }
 }
 
@@ -186,137 +182,5 @@ async fn usb_writer(mut usb_tx: UsbSerialJtagTx<'static>) {
             }
         });
         USB_READY_TO_SEND.reset();
-    }
-}
-
-#[embassy_executor::task]
-async fn onboard_rgb_led(
-    mut rgb_driver: ws2812_driver::SmartLedsAdapter<esp32c6_hal::rmt::Channel<0>, 25>,
-) {
-    rgb_driver
-        .write([RGB8::from((0, 0, 0)); 1].iter().cloned())
-        .ok();
-
-    let mut led_effect_driver = LedEffect::new(crate::LedEffects::Rainbow {
-        state: RainbowEffectStateMachine::IncRed,
-        max_brightness: 16,
-        delay_ms: 100,
-    });
-
-    let mut rgb = RGB8::from((0, 0, 0));
-    loop {
-        rgb_driver.write([rgb; 1].iter().cloned()).ok();
-
-        led_effect_driver.next(&mut rgb).await;
-    }
-}
-
-pub struct LedEffect {
-    effect: LedEffects,
-}
-
-impl LedEffect {
-    pub fn new(effect: LedEffects) -> Self {
-        LedEffect { effect }
-    }
-
-    pub async fn next(&mut self, rgb: &mut RGB8) {
-        match self.effect {
-            _ => self.effect.next(rgb).await,
-        }
-    }
-}
-
-#[derive(Default)]
-pub enum LedEffects {
-    #[default]
-    None,
-    Rainbow {
-        state: RainbowEffectStateMachine,
-        max_brightness: u8,
-        delay_ms: u64,
-    },
-}
-
-impl LedEffects {
-    async fn next(&mut self, rgb: &mut RGB8) {
-        match self {
-            Self::None => {}
-            Self::Rainbow {
-                state,
-                max_brightness,
-                delay_ms,
-            } => {
-                match state {
-                    RainbowEffectStateMachine::IncRed => {
-                        if rgb.r == *max_brightness {
-                            *state = state.next_state();
-                        } else {
-                            rgb.r += 1;
-                        }
-                    }
-                    RainbowEffectStateMachine::IncGreen => {
-                        if rgb.g == *max_brightness {
-                            *state = state.next_state();
-                        } else {
-                            rgb.g += 1;
-                        }
-                    }
-                    RainbowEffectStateMachine::IncBlue => {
-                        if rgb.b == *max_brightness {
-                            *state = state.next_state();
-                        } else {
-                            rgb.b += 1;
-                        }
-                    }
-                    RainbowEffectStateMachine::DecRed => {
-                        if rgb.r == 0 {
-                            *state = state.next_state();
-                        } else {
-                            rgb.r -= 1;
-                        }
-                    }
-                    RainbowEffectStateMachine::DecGreen => {
-                        if rgb.g == 0 {
-                            *state = state.next_state();
-                        } else {
-                            rgb.g -= 1;
-                        }
-                    }
-                    RainbowEffectStateMachine::DecBlue => {
-                        if rgb.b == 0 {
-                            *state = state.next_state();
-                        } else {
-                            rgb.b -= 1;
-                        }
-                    }
-                };
-                Timer::after(Duration::from_millis(*delay_ms)).await;
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-pub enum RainbowEffectStateMachine {
-    #[default]
-    IncRed,
-    IncGreen,
-    IncBlue,
-    DecRed,
-    DecGreen,
-    DecBlue,
-}
-
-impl RainbowEffectStateMachine {
-    fn next_state(&self) -> Self {
-        match self {
-            RainbowEffectStateMachine::IncRed => RainbowEffectStateMachine::DecGreen,
-            RainbowEffectStateMachine::DecGreen => RainbowEffectStateMachine::IncBlue,
-            RainbowEffectStateMachine::IncBlue => RainbowEffectStateMachine::DecRed,
-            RainbowEffectStateMachine::DecRed => RainbowEffectStateMachine::IncGreen,
-            RainbowEffectStateMachine::IncGreen => RainbowEffectStateMachine::DecBlue,
-            RainbowEffectStateMachine::DecBlue => RainbowEffectStateMachine::IncRed,
-        }
     }
 }

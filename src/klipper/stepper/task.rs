@@ -1,8 +1,7 @@
 use anchor::*;
-use as5600_async::{status::Status, As5600};
 use embassy_futures::select::{select, Either};
 use embassy_sync::{self, blocking_mutex::raw::CriticalSectionRawMutex};
-use embassy_time::{Duration, Instant, Timer};
+use embassy_time::{block_for, Duration, Instant, Timer};
 use esp32c6_hal::rmt::TxChannel;
 use esp32c6_hal::{
     prelude::{_embedded_hal_digital_v2_OutputPin, _embedded_hal_digital_v2_StatefulOutputPin},
@@ -64,6 +63,8 @@ pub async fn step_driver(
                 }
 
                 for _ in 0..step_info.count() {
+                    Timer::after_ticks(step_info.interval() as u64).await;
+
                     // Step Pulse
                     #[cfg(not(feature = "rmt_step"))]
                     if invert_step {
@@ -81,9 +82,9 @@ pub async fn step_driver(
                     {
                         step = step.transmit(&[pulse]).wait().unwrap();
                     }
-
-                    step_clock = Instant::now();
                 }
+                STEP_CORRECTION.reset();
+                step_clock = Instant::now();
             }
             Either::Second(step_info) => {
                 match step_info {
@@ -152,6 +153,19 @@ pub async fn step_driver(
 
                                 step_clock = Instant::now();
 
+                                if c % 32 == 0 {
+                                    // Try to send a message to the CLMonitor, if the queue is full we don't care
+                                    CL_MONITOR_CHANNEL.try_send(CLMonitorMessage::CheckPosition(
+                                        if step_info.dir() {
+                                            step_counter.wrapping_add(c as i32)
+                                        } else {
+                                            step_counter.wrapping_sub(c as i32)
+                                        },
+                                        step_info.interval(),
+                                        step_info.dir(),
+                                    ));
+                                }
+
                                 if step_info.add() != 0 {
                                     if step_info.add().is_positive() {
                                         delay_between_pulses = delay_between_pulses
@@ -169,17 +183,6 @@ pub async fn step_driver(
                                 }
                             }
                         }
-
-                        // Try to send a message to the CLMonitor, if the queue is full we don't care
-                        CL_MONITOR_CHANNEL.try_send(CLMonitorMessage::CheckPosition(
-                            if step_info.dir() {
-                                step_counter.wrapping_add(step_info.count() as i32)
-                            } else {
-                                step_counter.wrapping_sub(step_info.count() as i32)
-                            },
-                            step_info.interval(),
-                            step_info.dir(),
-                        ));
 
                         // Step counter
                         if step_info.dir() {
